@@ -1,48 +1,72 @@
-import { analyzeCommitMessage } from "./analyzer";
 import * as fs from "fs";
+import { execSync } from "child_process";
+import { askAI } from "./ai-model";
 
-console.log(process.argv, "this is to reds");
-
+// Get commit message file path
 const commitMsgFile = process.argv[2];
 if (!commitMsgFile) {
-    console.error("❌ Error: No commit message file provided.");
-    process.exit(1);
+  console.error("❌ Error: No commit message file provided.");
+  process.exit(1);
 }
 
-// Read the original commit message
-let originalMessage = fs.readFileSync(commitMsgFile, "utf-8").trim();
-
-// Check if the original message is empty or just contains unwanted content
-if (originalMessage === "" || originalMessage.includes("diff --git")) {
-    console.error("❌ Error: Invalid commit message content.");
-    process.exit(1);
+// Get list of changed files
+let changedFiles: { status: string; filePath: string }[] = [];
+try {
+  const result = execSync("git diff --name-status --cached", { encoding: "utf8" }).trim();
+  changedFiles = result.split("\n").map((line) => {
+    const [status, filePath] = line.split("\t");
+    return { status, filePath };
+  });
+} catch (error) {
+  console.error("❌ Error fetching changed files:", error);
+  process.exit(1);
 }
 
-// If originalMessage is being produced by an interactive message or certain rules, you can clean it further
-const cleanMessage = originalMessage.replace(/^\[.*?\]\s*/, ''); // Remove any prefix with square brackets, if applicable
+// Get actual changes in files
+const fileChanges: Record<string, string> = {};
+changedFiles.forEach(({ filePath }) => {
+  try {
+    const diffOutput = execSync(`git diff --cached --unified=0 ${filePath}`, { encoding: "utf8" });
+    fileChanges[filePath] = diffOutput;
+  } catch (error) {
+    console.error(`❌ Error fetching changes for ${filePath}:`, error);
+  }
+});
 
-// Analyze the cleaned original commit message
-const analyzedMessage = analyzeCommitMessage(cleanMessage);
+// Generate commit message
+let commitMessage = "Updated files:\n";
+changedFiles.forEach(({ status, filePath }) => {
+  let action = "";
+  switch (status) {
+    case "A":
+      action = `Added ${filePath}`;
+      break;
+    case "M":
+      action = `Modified ${filePath}`;
+      break;
+    case "D":
+      action = `Deleted ${filePath}`;
+      break;
+    default:
+      action = `Changed ${filePath}`;
+      break;
+  }
+  commitMessage += `- ${action}\n`;
+});
 
-// Function to create a meaningful commit purpose
-const generateMeaningfulCommitPurpose = (original: string): string => {
-    // Logic to modify the original message to state its purpose more clearly
-    if (original.startsWith("fix")) {
-        return `Fix: ${original.slice(4).trim()}`;
-    } else if (original.startsWith("feat")) {
-        return `Feature: ${original.slice(6).trim()}`;
-    } else if (original.startsWith("docs")) {
-        return `Documentation: ${original.slice(6).trim()}`;
-    } else if (original.startsWith("chore")) {
-        return `Chore: ${original.slice(6).trim()}`;
-    } else {
-        return `Update: ${original.trim()}`; // Default case
-    }
-};
+// Append actual code changes
+commitMessage += "\nChanges:\n";
+Object.entries(fileChanges).forEach(([filePath, diff]) => {
+  commitMessage += `🔹 **${filePath}**\n\`\`\`\n${diff}\n\`\`\`\n`;
+});
 
-// Generate the meaningful commit message
-const enhancedMessage = generateMeaningfulCommitPurpose(analyzedMessage);
-
-// Write the enhanced message back to the commit message file
-fs.writeFileSync(commitMsgFile, enhancedMessage);
-console.log(`✅ Commit message enhanced: ${enhancedMessage}`);
+// **WAIT for AI response before writing to the commit message file**
+askAI(commitMessage)
+  .then((modifiedCommitMessage) => {
+    console.log(`✅ Commit message set: ${modifiedCommitMessage}`);
+    fs.writeFileSync(commitMsgFile, modifiedCommitMessage); // Write AI-generated commit message
+  })
+  .catch((error) => {
+    console.error("❌ Error generating commit message:", error);
+    fs.writeFileSync(commitMsgFile, commitMessage); // Fallback to original commit message
+  });
