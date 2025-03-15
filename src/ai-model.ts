@@ -12,7 +12,7 @@ export async function askAI(prompt: string): Promise<string> {
     const completion = await openai.chat.completions.create({
       model: "gpt-4o-mini",
       messages: [
-        { role: "user", content: `Generate a concise commit message (max 6-7 words) without prefixes: ${prompt}` },
+        { role: "user", content: `Generate a concise commit message without prefixes: ${prompt}` },
       ],
     });
     return completion.choices[0]?.message?.content ?? "No response from AI.";
