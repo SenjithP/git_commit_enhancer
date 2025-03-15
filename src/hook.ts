@@ -2,14 +2,12 @@ import * as fs from "fs";
 import { execSync } from "child_process";
 import { askAI } from "./ai-model";
 
-// Get commit message file path
 const commitMsgFile = process.argv[2];
 if (!commitMsgFile) {
   console.error("❌ Error: No commit message file provided.");
   process.exit(1);
 }
 
-// Get list of changed files
 let changedFiles: { status: string; filePath: string }[] = [];
 try {
   const result = execSync("git diff --name-status --cached", { encoding: "utf8" }).trim();
@@ -22,7 +20,6 @@ try {
   process.exit(1);
 }
 
-// Get actual changes in files
 const fileChanges: Record<string, string> = {};
 changedFiles.forEach(({ filePath }) => {
   try {
@@ -33,40 +30,22 @@ changedFiles.forEach(({ filePath }) => {
   }
 });
 
-// Generate commit message
 let commitMessage = "Updated files:\n";
 changedFiles.forEach(({ status, filePath }) => {
-  let action = "";
-  switch (status) {
-    case "A":
-      action = `Added ${filePath}`;
-      break;
-    case "M":
-      action = `Modified ${filePath}`;
-      break;
-    case "D":
-      action = `Deleted ${filePath}`;
-      break;
-    default:
-      action = `Changed ${filePath}`;
-      break;
-  }
+  const action = status === "A" ? `Added ${filePath}` : status === "M" ? `Modified ${filePath}` : status === "D" ? `Deleted ${filePath}` : `Changed ${filePath}`;
   commitMessage += `- ${action}\n`;
 });
 
-// Append actual code changes
 commitMessage += "\nChanges:\n";
 Object.entries(fileChanges).forEach(([filePath, diff]) => {
-  commitMessage += `🔹 **${filePath}**\n\`\`\`\n${diff}\n\`\`\`\n`;
+  commitMessage += `🔹 **${filePath}**\n\n${diff}\n\n`;
 });
 
-// **WAIT for AI response before writing to the commit message file**
 askAI(commitMessage)
   .then((modifiedCommitMessage) => {
+    fs.writeFileSync(commitMsgFile, modifiedCommitMessage);
     console.log(`✅ Commit message set: ${modifiedCommitMessage}`);
-    fs.writeFileSync(commitMsgFile, modifiedCommitMessage); // Write AI-generated commit message
   })
   .catch((error) => {
     console.error("❌ Error generating commit message:", error);
-    fs.writeFileSync(commitMsgFile, commitMessage); // Fallback to original commit message
   });

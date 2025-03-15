@@ -8,12 +8,3 @@ export function getGitDiff(): string {
     return "";
   }
 }
-
-export function getLastCommitMessage(): string {
-  try {
-    return execSync("git log -1 --pretty=%B", { encoding: "utf-8" }).trim();
-  } catch (error) {
-    console.error("❌ Error getting last commit message:", error);
-    return "";
-  }
-}
